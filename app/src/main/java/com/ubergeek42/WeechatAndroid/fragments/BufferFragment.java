@@ -1,8 +1,16 @@
 package com.ubergeek42.WeechatAndroid.fragments;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.net.Uri;
+import android.os.AsyncTask;
+import android.provider.MediaStore;
 import androidx.annotation.AnyThread;
 import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
@@ -10,6 +18,8 @@ import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
 import androidx.fragment.app.Fragment;
 
+import org.json.JSONException;
+import org.json.JSONObject;
 import org.greenrobot.eventbus.EventBus;
 import org.greenrobot.eventbus.Subscribe;
 import org.greenrobot.eventbus.ThreadMode;
@@ -19,6 +29,7 @@ import android.os.Bundle;
 import androidx.recyclerview.widget.RecyclerView;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -49,9 +60,17 @@ import com.ubergeek42.weechat.ColorScheme;
 import static com.ubergeek42.WeechatAndroid.service.Events.*;
 import static com.ubergeek42.WeechatAndroid.service.RelayService.STATE.*;
 
+import cz.msebera.android.httpclient.HttpEntity;
+import cz.msebera.android.httpclient.HttpResponse;
+import cz.msebera.android.httpclient.client.methods.HttpPost;
+import cz.msebera.android.httpclient.entity.mime.MultipartEntityBuilder;
+import cz.msebera.android.httpclient.impl.client.CloseableHttpClient;
+import cz.msebera.android.httpclient.impl.client.HttpClients;
 
 public class BufferFragment extends Fragment implements BufferEye, OnKeyListener,
         OnClickListener, TextWatcher, TextView.OnEditorActionListener {
+
+    public AlertDialog alertDialog;
 
     final private @Root Kitty kitty = Kitty.make("BF");
 
@@ -64,6 +83,7 @@ public class BufferFragment extends Fragment implements BufferEye, OnKeyListener
     private EditText uiInput;
     private ImageButton uiSend;
     private ImageButton uiTab;
+    private ImageButton uiUploadImg;
 
     private long pointer = 0;
     private Buffer buffer;
@@ -104,8 +124,11 @@ public class BufferFragment extends Fragment implements BufferEye, OnKeyListener
 
         uiLines = v.findViewById(R.id.chatview_lines);
         uiInput = v.findViewById(R.id.chatview_input);
+
+
         uiSend = v.findViewById(R.id.chatview_send);
         uiTab = v.findViewById(R.id.chatview_tab);
+        uiUploadImg = v.findViewById(R.id.chatview_uploadimg);
 
         linesAdapter = new ChatLinesAdapter(uiLines);
         uiLines.setAdapter(linesAdapter);
@@ -115,8 +138,10 @@ public class BufferFragment extends Fragment implements BufferEye, OnKeyListener
             }
         });
 
+
         uiSend.setOnClickListener(this);
         uiTab.setOnClickListener(this);
+        uiUploadImg.setOnClickListener(this);
         uiInput.setOnKeyListener(this);            // listen for hardware keyboard
         uiInput.addTextChangedListener(this);      // listen for software keyboard through watching input box text
         uiInput.setOnEditorActionListener(this);   // listen for software keyboard's “send” click. see onEditorAction()
@@ -326,8 +351,129 @@ public class BufferFragment extends Fragment implements BufferEye, OnKeyListener
         switch (v.getId()) {
             case R.id.chatview_send: sendMessage(); break;
             case R.id.chatview_tab: tryTabComplete(); break;
+            case R.id.chatview_uploadimg: tryUploadImg(); break;
         }
     }
+
+    @SuppressLint("SetTextI18n")
+    private void tryUploadImg() {
+        if (buffer == null) {
+            return;
+        }
+
+        Intent photoPickerIntent = new Intent(Intent.ACTION_PICK);
+        photoPickerIntent.setType("image/*");
+        int REQUEST_CODE_LOAD_IMAGE = 1;
+
+        startActivityForResult(photoPickerIntent, REQUEST_CODE_LOAD_IMAGE);
+
+        uiInput.setSelection(uiInput.getText().length());
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent imageReturnedIntent) {
+        super.onActivityResult(requestCode, resultCode, imageReturnedIntent);
+
+        if (imageReturnedIntent == null) {
+            return;
+        }
+
+        if (requestCode == 1 && imageReturnedIntent.getData() != null) {
+            try {
+                final Uri imageUri = imageReturnedIntent.getData();
+
+                Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContext().getContentResolver(), imageUri);
+                ImgurUploadBgHelper upl = new ImgurUploadBgHelper();
+                upl.execute("PDiTaLP", bitmap);
+
+                AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(getContext());
+                alertDialogBuilder.setTitle("Imgur upload");
+                alertDialogBuilder.setMessage("Uploading your image...").setCancelable(false);
+                alertDialog = alertDialogBuilder.create();
+                alertDialog.show();
+            } catch(IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    public class ImgurUploadBgHelper extends AsyncTask<Object, Void, String>
+    {
+        protected String doInBackground(Object... params)
+        {
+            String name = (String)params[0];
+            Bitmap bitmap = (Bitmap)params[1];
+
+            ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, byteArrayOutputStream);
+            String encoded_file = Base64.encodeToString( byteArrayOutputStream.toByteArray(), Base64.DEFAULT);
+
+            CloseableHttpClient httpClient = HttpClients.createDefault();
+
+            HttpEntity entity = MultipartEntityBuilder
+                    .create()
+                    .addTextBody("image", encoded_file)
+                    .addTextBody("type", "base64")
+                    .build();
+
+            HttpPost httpPost = new HttpPost("https://api.imgur.com/3/upload");
+            httpPost.addHeader("Authorization", "Client-ID a416e89635996b4");
+            httpPost.setEntity(entity);
+
+            try {
+                HttpResponse response = httpClient.execute(httpPost);
+                HttpEntity result = response.getEntity();
+
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                result.writeTo(bytes);
+                String content = bytes.toString();
+
+                return entity != null ? content : null;
+
+            } catch (IOException e) {
+                e.printStackTrace();
+                return null;
+            } finally {
+                try {
+                    httpClient.close();
+                }
+                catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        protected void onPostExecute(String jsonRESULT) {
+            try {
+                JSONObject jsonParsed = new JSONObject(jsonRESULT);
+                boolean success = jsonParsed.getBoolean("success");
+                JSONObject jsonParsedData = jsonParsed.getJSONObject("data");
+
+                alertDialog.dismiss();
+
+                if (success) {
+                    String url = jsonParsedData.getString("link");
+
+                    uiInput.setText(uiInput.getText() + " " + url);
+                    uiInput.setSelection(uiInput.getText().length());
+                } else {
+                    AlertDialog.Builder alertDialogBuilder = new AlertDialog.Builder(getContext());
+                    alertDialogBuilder.setTitle("Imgur upload");
+                    alertDialogBuilder.setMessage("There was an error uploading your image.").setCancelable(true);
+                    AlertDialog errorDialog = alertDialogBuilder.create();
+                    errorDialog.show();
+                }
+            } catch (JSONException e) {
+                e.getMessage();
+            }
+            catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                alertDialog.dismiss();
+            }
+        }
+    }
+
+
 
     // the only OnEditorActionListener's method
     // listens to keyboard's “send” press (not our button)
