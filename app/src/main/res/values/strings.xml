@@ -325,7 +325,7 @@
 
         <string name="strategypreference_error">Error</string>
         <string name="strategypreference_summary">Defines the ways images are fetched from individual
-            websites, and some filters.\n\n%s; %s;\n\n%s</string>
+            websites, and some filters.\n\n%$1s; %s;\n\n%$1s</string>
         <string name="strategypreference_message_filter_set">Message filter set</string>
         <string name="strategypreference_message_filter_not_set">Message filter not set</string>
         <string name="strategypreference_line_filters_not_set">line filters not set</string>
@@ -559,9 +559,18 @@ strategies:
     <string name="edittext_password_hint">password</string>
 
     <string name="error_client_certificate_not_set">Server is asking for a client certificate but
-        none is set. Wanted: %s certificate issued by: %s</string>
+        none is set. Wanted: %1$s certificate issued by: %2$s</string>
     <string name="error_client_certificate_mismatch">Server is asking for a client certificate but
-        the one we have doesn’t fit. Wanted: %s certificate issued by: %s</string>
+        the one we have doesn’t fit. Wanted: %1$s certificate issued by: %2$s</string>
 
     <string name="pref_ssh_authentication_method">Authentication method</string>
+
+    <string name="exceptions_ssh_failed_to_authenticate_with_password">Failed to authenticate with
+        password~</string>
+    <string name="exceptions_ssh_failed_to_authenticate_with_key">Failed to authenticate with
+        key</string>
+    <string name="exceptions_ssh_hostname_not_present_in_known_hosts">Hostname %s is not present in
+        known hosts</string>
+    <string name="exceptions_ssh_hostkey_not_verified">Hostname %1$s is known, but could not be
+        verified. Chosen algorithm: %2$s; SHA256 host key fingerprint: %3$s</string>
 </resources>
