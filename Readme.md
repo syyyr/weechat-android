@@ -1,3 +1,5 @@
+### *This fork adds an image uploading feature written by [chinese-soup](https://github.com/chinese-soup).*
+
 Weechat-Android relay client
 ==================================
 This is a WeeChat relay client for Android.
